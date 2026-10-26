@@ -31,6 +31,15 @@ DEMO = ROOT / "examples" / "synthetic" / "bundle"
 REQUESTS = DEMO / "requests.csv"
 
 
+def _read_proc_state(proc_stat: Path) -> str | None:
+    try:
+        fields = proc_stat.read_text().split()
+    except FileNotFoundError:
+        # A process can exit after the caller's liveness check but before this read.
+        return None
+    return fields[2]
+
+
 def zip_bundle(*, manifest_override: str | None = None, extra: dict[str, bytes] | None = None,
                include: set[str] | None = None) -> bytes:
     out = io.BytesIO()
@@ -513,6 +522,9 @@ class ApiTests(unittest.TestCase):
                 _api_call("http://127.0.0.1:8000", "/api/health", token=token)
         self.assertNotIn(token, str(caught.exception))
 
+    def test_proc_state_reader_treats_missing_entry_as_gone(self) -> None:
+        self.assertIsNone(_read_proc_state(self.root / "missing" / "stat"))
+
     @unittest.skipIf(os.name == "nt", "POSIX process groups are verified in Linux CI; Windows taskkill path is platform-specific")
     def test_timeout_terminates_engine_descendants(self) -> None:
         settings = AppSettings(self.root / "tree-kill-data", execution_timeout_seconds=1)
@@ -532,7 +544,8 @@ class ApiTests(unittest.TestCase):
             try:
                 os.kill(child_pid, 0)
                 proc_stat = Path(f"/proc/{child_pid}/stat")
-                if proc_stat.exists() and proc_stat.read_text().split()[2] == "Z":
+                proc_state = _read_proc_state(proc_stat)
+                if proc_state is None or proc_state == "Z":
                     alive = False
                     break
             except ProcessLookupError:
