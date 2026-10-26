@@ -1,0 +1,8 @@
+{
+  "resource_id": "account_101",
+  "user_id": "user_1001",
+  "email": "jordan@example.invalid",
+  "name": "Jordan Example",
+  "status": "PRESENT",
+  "observed_at": "2026-10-10T10:45:00Z"
+}

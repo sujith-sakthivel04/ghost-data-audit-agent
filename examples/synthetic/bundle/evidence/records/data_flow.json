@@ -1,0 +1,8 @@
+{
+  "resource_id": "data_flow_301",
+  "user_id": "user_1001",
+  "email": "jordan@example.invalid",
+  "enabled": true,
+  "status": "ACTIVE",
+  "observed_at": "2026-10-10T10:46:00Z"
+}

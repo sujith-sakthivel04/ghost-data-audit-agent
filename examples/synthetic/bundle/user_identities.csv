@@ -1,0 +1,2 @@
+user_id,name,email,phone,email_hash,updated_at
+user_1001,Jordan Example,jordan@example.invalid,+1-555-0109,5cb26327d830b577a176970bdc929c7163c75f4db3308a65e4f1d3968476db1e,2026-10-01T10:00:00Z

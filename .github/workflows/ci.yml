@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install application and test extras
+        run: python -m pip install -e ".[app,test,pdf,ocr]"
+      - name: Run engine, API, and security regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Run synthetic CLI and validator
+        run: |
+          python -m ghost_audit run --requests examples/synthetic/bundle/requests.csv --evidence-dir examples/synthetic/bundle --output "${RUNNER_TEMP}/ghost-audit-demo.csv"
+          python -m ghost_audit validate --requests examples/synthetic/bundle/requests.csv --output "${RUNNER_TEMP}/ghost-audit-demo.csv"
+      - name: Verify imports and build wheel
+        run: |
+          python -c "from ghost_audit.api import create_app; from ghost_audit.engine import run_audit; print('package imports passed')"
+          python -m pip wheel --no-deps --wheel-dir "${RUNNER_TEMP}/dist" .
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build local-first container
+        run: docker build --tag ghost-data-audit:ci .
+      - name: Run containerized synthetic demo without network access
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,src=${GITHUB_WORKSPACE}/examples/synthetic/bundle,dst=/demo,readonly" \
+            --tmpfs /tmp/ghost-audit-tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001 \
+            ghost-data-audit:ci sh -c "ghost-audit health && ghost-audit run --requests /demo/requests.csv --evidence-dir /demo --output /tmp/ghost-audit-tmp/demo.csv && ghost-audit validate --requests /demo/requests.csv --output /tmp/ghost-audit-tmp/demo.csv"
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Start proxy stack and smoke-test loopback routing
+        run: |
+          docker compose up -d --build --wait --wait-timeout 120
+          test "$(docker compose port proxy 8080)" = "127.0.0.1:8080"
+          api_id="$(docker compose ps -q api)"
+          dashboard_id="$(docker compose ps -q dashboard)"
+          api_bindings="$(docker inspect "$api_id" --format '{{json .HostConfig.PortBindings}}')"
+          dashboard_bindings="$(docker inspect "$dashboard_id" --format '{{json .HostConfig.PortBindings}}')"
+          test "$api_bindings" = "null" || test "$api_bindings" = "{}"
+          test "$dashboard_bindings" = "null" || test "$dashboard_bindings" = "{}"
+          curl --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/health
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/version
+      - name: Stop proxy smoke-test services
+        if: always()
+        run: docker compose down -v

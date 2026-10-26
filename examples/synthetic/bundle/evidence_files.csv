@@ -1,0 +1,4 @@
+file_id,file_path,origin,captured_at
+demo_evidence_account,evidence/records/account.json,synthetic_demo,2026-10-10T11:00:00Z
+demo_evidence_flow,evidence/records/data_flow.json,synthetic_demo,2026-10-10T11:00:00Z
+demo_evidence_delivery,evidence/records/delivery_log.json,synthetic_demo,2026-10-10T11:00:00Z

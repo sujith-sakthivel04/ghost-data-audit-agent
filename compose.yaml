@@ -1,0 +1,92 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      GHOST_AUDIT_DATA_DIR: /data
+      GHOST_AUDIT_MODE: ${GHOST_AUDIT_MODE:-development}
+      GHOST_AUDIT_BEARER_TOKEN: ${GHOST_AUDIT_BEARER_TOKEN:-}
+      GHOST_AUDIT_AUTH_REQUIRED: ${GHOST_AUDIT_AUTH_REQUIRED:-}
+      GHOST_AUDIT_CORS_ORIGINS: ${GHOST_AUDIT_CORS_ORIGINS:-}
+      GHOST_AUDIT_MAX_UPLOAD_BYTES: ${GHOST_AUDIT_MAX_UPLOAD_BYTES:-52428800}
+      GHOST_AUDIT_MAX_ZIP_ENTRIES: ${GHOST_AUDIT_MAX_ZIP_ENTRIES:-5000}
+      GHOST_AUDIT_MAX_UNCOMPRESSED_BYTES: ${GHOST_AUDIT_MAX_UNCOMPRESSED_BYTES:-262144000}
+      GHOST_AUDIT_TIMEOUT_SECONDS: ${GHOST_AUDIT_TIMEOUT_SECONDS:-300}
+      GHOST_AUDIT_MAX_CONCURRENT: ${GHOST_AUDIT_MAX_CONCURRENT:-1}
+      GHOST_AUDIT_RETENTION_HOURS: ${GHOST_AUDIT_RETENTION_HOURS:-24}
+    volumes:
+      - audit-data:/data
+      - ./examples/synthetic/bundle:/demo:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001,mode=1777
+    networks:
+      - app_internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()"]
+      interval: 30s
+      timeout: 4s
+      retries: 3
+      start_period: 15s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["streamlit", "run", "src/ghost_audit/dashboard.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--browser.gatherUsageStats", "false"]
+    environment:
+      GHOST_AUDIT_API_URL: ${GHOST_AUDIT_API_URL:-http://api:8000}
+      GHOST_AUDIT_API_CONNECTION_MODE: compose_internal
+      HOME: /tmp/ghost-home
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001,mode=1777
+    networks:
+      - app_internal
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2).read()"]
+      interval: 30s
+      timeout: 4s
+      retries: 3
+      start_period: 15s
+
+  proxy:
+    image: nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    user: "101:101"
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=101,gid=101,mode=1777
+    networks:
+      - app_internal
+      - ingress
+    depends_on:
+      api:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 4s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  audit-data:
+
+networks:
+  app_internal:
+    internal: true
+  ingress:
+    driver: bridge

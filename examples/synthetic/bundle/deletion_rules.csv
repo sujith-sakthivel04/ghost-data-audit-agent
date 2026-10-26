@@ -1,0 +1,4 @@
+rule_id,data_category,condition,required_treatment
+demo_rule_01,USER_PROFILE,Deletion requested,DELETE
+demo_rule_02,DATA_FLOW,Can recreate deleted data,DISABLE
+demo_rule_03,EMAIL_DELIVERY_LOG,Required operational retention,REDACT
